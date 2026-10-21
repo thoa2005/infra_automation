@@ -1,0 +1,22 @@
+
+- name: Cai va bat Nginx
+  hosts: websevers
+  become: true
+
+  tasks:
+    - name: Cai Nginx
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+
+    - name: Bat Nginx va cho khoi dong cung may
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+    - name: dua trang chu len nginx 
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/index.html"
+        dest: /var/www/html/index.html
+        mode: "0644"
+
