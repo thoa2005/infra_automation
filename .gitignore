@@ -1,0 +1,10 @@
+*.pem
+*.key
+.vault_pass
+*.retry
+.vagrant/
+*.vmdk
+*.vmem
+*.vmsn
+*.nvram
+*.log
