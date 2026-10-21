@@ -1,0 +1,84 @@
+---
+- name: Chuan bi VM cho Phone-shop
+  hosts: webservers
+  become: true
+  vars:
+    app_user: vanthoa
+    test_dir: /opt/phone-shop-tests
+
+  tasks:
+    - name: Cai Java 17, Maven, Node.js, npm, MySQL va thu vien can thiet
+      ansible.builtin.apt:
+        name:
+          - openjdk-17-jdk
+          - maven
+          - nodejs
+          - npm
+          - mysql-server
+          - python3-pymysql
+          - git
+          - curl
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Bat MySQL va cho khoi dong cung VM
+      ansible.builtin.service:
+        name: mysql
+        state: started
+        enabled: true
+
+    - name: Tao thu muc cho bai test Playwright
+      ansible.builtin.file:
+        path: "{{ test_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0755"
+
+    - name: Dua ma test va package lock len VM
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../tests/"
+        dest: "{{ test_dir }}/"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: preserve
+      register: test_files
+
+    - name: Kiem tra node_modules da duoc cai chua
+      ansible.builtin.stat:
+        path: "{{ test_dir }}/node_modules/.package-lock.json"
+      register: test_modules
+
+    - name: Cai Playwright tu package-lock
+      ansible.builtin.command: npm ci --no-audit --no-fund
+      args:
+        chdir: "{{ test_dir }}"
+      become_user: "{{ app_user }}"
+      when: test_files.changed or not test_modules.stat.exists
+
+    - name: Xac dinh duong dan trinh duyet Chromium
+      ansible.builtin.command: node -e "process.stdout.write(require('playwright').chromium.executablePath())"
+      args:
+        chdir: "{{ test_dir }}"
+      become_user: "{{ app_user }}"
+      register: chromium_path
+      changed_when: false
+
+    - name: Kiem tra Chromium da duoc cai chua
+      ansible.builtin.stat:
+        path: "{{ chromium_path.stdout }}"
+      register: chromium_binary
+
+    - name: Cai thu vien he thong cho Chromium
+      ansible.builtin.command: npx playwright install-deps chromium
+      args:
+        chdir: "{{ test_dir }}"
+      when: not chromium_binary.stat.exists
+
+    - name: Cai Chromium cho Playwright
+      ansible.builtin.command: npx playwright install chromium
+      args:
+        chdir: "{{ test_dir }}"
+      become_user: "{{ app_user }}"
+      when: not chromium_binary.stat.exists

@@ -8,6 +8,8 @@ Dự án thực hành System Engineer: quản lý mã cấu hình bằng Git và
 - `ansible/playbooks/nginx.yml`: cài Nginx, bật dịch vụ cùng hệ thống và triển khai `ansible/files/index.html`.
 - `ansible/files/check-nginx.sh`: kiểm tra HTTP 200 tại `127.0.0.1` mỗi 5 phút qua cron. Kết quả vào system journal với nhãn `infra-health`.
 - `scripts/Start-Infrastructure.ps1`: trên Windows, bật VM nếu cần, tìm IP bằng `vmrun`, kết nối SSH, cập nhật repo và chạy playbook.
+- `ansible/playbooks/phone-shop-prereqs.yml`: chuẩn bị Java 17, Maven, Node.js, npm, MySQL và Playwright/Chromium cho dự án Phone-shop.
+- `tests/`: bài kiểm thử trình duyệt mẫu. Repo Phone-shop hiện chưa có bài e2e; bài này chỉ xác nhận trang web trả HTTP 200.
 
 ## Chạy trên VM hiện tại
 
@@ -30,6 +32,29 @@ ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/nginx.yml -K
 
 Ubuntu 26.04 trong lab dùng `sudo-rs`. Inventory chỉ định `/usr/bin/sudo.ws` để Ansible nhận đúng dấu nhắc mật khẩu.
 
+Để cài môi trường Phone-shop trên Ubuntu, chạy trong thư mục repo:
+
+```bash
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-prereqs.yml -K
+```
+
+`-i` chọn inventory; `-K` hỏi mật khẩu sudo. Playbook cài Java và Maven để build backend, Node.js và npm để build frontend, MySQL cho dữ liệu, cùng Playwright và Chromium cho test. Nó chưa tạo database, chưa build/chạy Phone-shop và chưa đặt lịch hay gửi Telegram.
+
+Kiểm tra môi trường và chạy bài test mẫu:
+
+```bash
+java -version
+mvn -version
+node --version
+npm --version
+mysql --version
+cd /opt/phone-shop-tests
+npx playwright --version
+npm test
+```
+
+`npm test` chạy script `playwright test` trong `package.json` và mở trang Nginx hiện tại tại `http://127.0.0.1`. Khi ứng dụng Phone-shop được triển khai, đổi URL và thêm các bài test nghiệp vụ.
+
 Sau khi chạy playbook, kiểm tra thủ công trên Ubuntu:
 
 ```bash
@@ -44,4 +69,4 @@ Lệnh thứ nhất kiểm tra HTTP ngay; lệnh thứ hai xem 10 bản ghi gầ
 
 - Tạo VM mới từ một nguồn Ubuntu sạch bằng mã.
 - Dùng một máy điều khiển Ansible cấu hình VM khác qua SSH.
-- Gửi cảnh báo khi dịch vụ lỗi, CI và bài dựng lại hạ tầng từ đầu.
+- Triển khai backend, frontend và schema MySQL cho Phone-shop; viết bài Playwright nghiệp vụ; đặt lịch và gửi Telegram; CI và bài dựng lại hạ tầng từ đầu.
