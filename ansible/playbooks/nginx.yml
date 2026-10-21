@@ -1,6 +1,6 @@
 
 - name: Cai va bat Nginx
-  hosts: websevers
+  hosts: webservers
   become: true
 
   tasks:
@@ -14,7 +14,7 @@
         name: nginx
         state: started
         enabled: true
-    - name: dua trang chu len nginx 
+    - name: Dua trang chu len Nginx
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../files/index.html"
         dest: /var/www/html/index.html
