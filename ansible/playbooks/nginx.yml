@@ -20,3 +20,31 @@
         dest: /var/www/html/index.html
         mode: "0644"
 
+    - name: Cai curl va cron cho kiem tra suc khoe
+      ansible.builtin.apt:
+        name:
+          - curl
+          - cron
+        state: present
+
+    - name: Bat cron cung he thong
+      ansible.builtin.service:
+        name: cron
+        state: started
+        enabled: true
+
+    - name: Dua script kiem tra Nginx len may
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/check-nginx.sh"
+        dest: /usr/local/bin/check-nginx
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Kiem tra Nginx moi 5 phut
+      ansible.builtin.cron:
+        name: infra-nginx-health
+        minute: "*/5"
+        user: root
+        job: /usr/local/bin/check-nginx
+

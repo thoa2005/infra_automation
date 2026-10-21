@@ -6,6 +6,7 @@ Dự án thực hành System Engineer: quản lý mã cấu hình bằng Git và
 
 - `ansible/inventory/hosts.ini`: nhóm máy `webservers`. Hiện dùng `localhost` vì Ansible chạy trong chính VM Ubuntu.
 - `ansible/playbooks/nginx.yml`: cài Nginx, bật dịch vụ cùng hệ thống và triển khai `ansible/files/index.html`.
+- `ansible/files/check-nginx.sh`: kiểm tra HTTP 200 tại `127.0.0.1` mỗi 5 phút qua cron. Kết quả vào system journal với nhãn `infra-health`.
 - `scripts/Start-Infrastructure.ps1`: trên Windows, bật VM nếu cần, tìm IP bằng `vmrun`, kết nối SSH, cập nhật repo và chạy playbook.
 
 ## Chạy trên VM hiện tại
@@ -29,8 +30,18 @@ ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/nginx.yml -K
 
 Ubuntu 26.04 trong lab dùng `sudo-rs`. Inventory chỉ định `/usr/bin/sudo.ws` để Ansible nhận đúng dấu nhắc mật khẩu.
 
+Sau khi chạy playbook, kiểm tra thủ công trên Ubuntu:
+
+```bash
+sudo /usr/local/bin/check-nginx
+sudo journalctl -t infra-health -n 10 --no-pager
+sudo crontab -l
+```
+
+Lệnh thứ nhất kiểm tra HTTP ngay; lệnh thứ hai xem 10 bản ghi gần nhất; lệnh thứ ba xác nhận lịch cron. Nhật ký lỗi hiện chỉ lưu tại máy, chưa gửi cảnh báo ra ngoài.
+
 ## Chưa hoàn thành
 
 - Tạo VM mới từ một nguồn Ubuntu sạch bằng mã.
 - Dùng một máy điều khiển Ansible cấu hình VM khác qua SSH.
-- Kiểm tra dịch vụ theo lịch, CI và bài dựng lại hạ tầng từ đầu.
+- Gửi cảnh báo khi dịch vụ lỗi, CI và bài dựng lại hạ tầng từ đầu.
