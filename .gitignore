@@ -1,3 +1,13 @@
+*.pem
+*.key
+.vault_pass
+*.retry
+.vagrant/
+*.vmdk
+*.vmem
+*.vmsn
+*.nvram
+*.log
 tests/node_modules/
 tests/playwright-report/
 tests/test-results/
