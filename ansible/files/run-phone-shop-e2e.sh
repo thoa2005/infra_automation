@@ -3,13 +3,16 @@ set -u
 
 APP_DIR="${PHONE_SHOP_DIR:-/home/vanthoa/Phone-shop}"
 ENV_FILE="${PHONE_SHOP_ENV_FILE:-/home/vanthoa/.config/infra/telegram.env}"
+E2E_ENV_FILE="${PHONE_SHOP_E2E_ENV_FILE:-/home/vanthoa/.config/infra/e2e.env}"
 
-if [[ -f "$ENV_FILE" ]]; then
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-  set +a
-fi
+for config_file in "$ENV_FILE" "$E2E_ENV_FILE"; do
+  if [[ -f "$config_file" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$config_file"
+    set +a
+  fi
+done
 
 TELEGRAM_TOKEN="${TELEGRAM_BOT_TOKEN:-${TELEGRAM_TOKEN:-}}"
 

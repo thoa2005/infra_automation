@@ -93,7 +93,7 @@ ansible-galaxy collection install -r ansible/requirements.yml
 ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-deploy.yml -K
 ```
 
-Playbook sinh mật khẩu database và khóa JWT tại `~/.config/infra/`, tạo `/etc/phone-shop/backend.env` với quyền `0600`, build mã nguồn và tạo ba dịch vụ `phone-shop-backend`, `phone-shop-frontend`, `nginx`. Các giá trị bí mật không được commit vào Git.
+Playbook sinh mật khẩu database và khóa JWT tại `~/.config/infra/`, tạo `/etc/phone-shop/backend.env` cùng `~/.config/infra/e2e.env` với quyền `0600`, build mã nguồn và tạo ba dịch vụ `phone-shop-backend`, `phone-shop-frontend`, `nginx`. Các giá trị bí mật không được commit vào Git.
 
 Kiểm tra trạng thái sau khi triển khai:
 

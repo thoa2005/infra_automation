@@ -9,6 +9,7 @@ User={{ app_user }}
 Group={{ app_user }}
 Environment=PHONE_SHOP_DIR={{ phone_shop_dir }}
 Environment=PHONE_SHOP_ENV_FILE={{ phone_shop_env_file }}
+Environment=PHONE_SHOP_E2E_ENV_FILE=/home/{{ app_user }}/.config/infra/e2e.env
 ExecStart=/usr/local/bin/run-phone-shop-e2e
 WorkingDirectory={{ phone_shop_dir }}
 

@@ -85,6 +85,15 @@
         mode: "0600"
       no_log: true
 
+    - name: Tao file bien moi truong cho Playwright
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-e2e.env.j2"
+        dest: "{{ secrets_dir }}/e2e.env"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0600"
+      no_log: true
+
     - name: Cap nhat ma nguon Phone Shop tu GitHub
       ansible.builtin.git:
         repo: "{{ phone_shop_repo }}"
