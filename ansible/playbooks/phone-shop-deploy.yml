@@ -60,6 +60,7 @@
       ansible.mysql.mysql_user:
         name: phoneshop
         host: localhost
+        plugin: caching_sha2_password
         password: "{{ phone_shop_db_password }}"
         priv: "phoneshop_db.*:ALL"
         state: present
