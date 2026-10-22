@@ -9,6 +9,7 @@ Dự án thực hành System Engineer: quản lý mã cấu hình bằng Git và
 - `ansible/files/check-nginx.sh`: kiểm tra HTTP 200 tại `127.0.0.1` mỗi 5 phút qua cron. Kết quả vào system journal với nhãn `infra-health`.
 - `scripts/Start-Infrastructure.ps1`: trên Windows, bật VM nếu cần, tìm IP bằng `vmrun`, kết nối SSH, cập nhật repo và chạy playbook.
 - `ansible/playbooks/phone-shop-prereqs.yml`: chuẩn bị Java 17, Maven, Node.js, npm, MySQL và Playwright/Chromium cho dự án Phone-shop.
+- `ansible/playbooks/phone-shop-monitor.yml`: cài script chạy Playwright, gửi kết quả qua Telegram và tạo lịch systemd hằng ngày.
 - `tests/`: bài kiểm thử trình duyệt mẫu. Repo Phone-shop hiện chưa có bài e2e; bài này chỉ xác nhận trang web trả HTTP 200.
 
 ## Chạy trên VM hiện tại
@@ -55,6 +56,33 @@ npm test
 
 `npm test` chạy script `playwright test` trong `package.json` và mở trang Nginx hiện tại tại `http://127.0.0.1`. Khi ứng dụng Phone-shop được triển khai, đổi URL và thêm các bài test nghiệp vụ.
 
+## Thông báo Telegram và lịch kiểm thử
+
+Tạo file riêng tư `/home/vanthoa/.config/infra/telegram.env` trên VM:
+
+```bash
+TELEGRAM_TOKEN=token-cua-bot
+TELEGRAM_CHAT_ID=id-cuoc-tro-chuyen
+```
+
+Không commit file này vào Git. Khóa quyền đọc và cài service/timer:
+
+```bash
+chmod 600 ~/.config/infra/telegram.env
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-monitor.yml -K
+sudo /usr/local/bin/run-phone-shop-e2e --notification-test
+```
+
+Playbook mặc định chỉ cài timer và giữ nó ở trạng thái tắt vì ứng dụng chưa được triển khai. Sau khi backend, frontend và database đã chạy ổn, bật lịch 07:00 hằng ngày:
+
+```bash
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-monitor.yml -K -e phone_shop_monitor_enabled=true
+systemctl list-timers phone-shop-e2e.timer
+journalctl -u phone-shop-e2e.service -n 100 --no-pager
+```
+
+`-e phone_shop_monitor_enabled=true` ghi đè biến mặc định để bật timer. `list-timers` cho biết lần chạy kế tiếp; `journalctl` xem kết quả và lỗi của lần chạy gần đây.
+
 Sau khi chạy playbook, kiểm tra thủ công trên Ubuntu:
 
 ```bash
@@ -69,4 +97,4 @@ Lệnh thứ nhất kiểm tra HTTP ngay; lệnh thứ hai xem 10 bản ghi gầ
 
 - Tạo VM mới từ một nguồn Ubuntu sạch bằng mã.
 - Dùng một máy điều khiển Ansible cấu hình VM khác qua SSH.
-- Triển khai backend, frontend và schema MySQL cho Phone-shop; viết bài Playwright nghiệp vụ; đặt lịch và gửi Telegram; CI và bài dựng lại hạ tầng từ đầu.
+- Triển khai backend, frontend và schema MySQL cho Phone-shop; bật lịch Playwright sau khi ứng dụng chạy ổn; CI và bài dựng lại hạ tầng từ đầu.

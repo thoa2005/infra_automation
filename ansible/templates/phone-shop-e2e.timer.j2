@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Phone Shop Playwright tests every day
+
+[Timer]
+OnCalendar={{ phone_shop_test_calendar }}
+Persistent=true
+Unit=phone-shop-e2e.service
+
+[Install]
+WantedBy=timers.target

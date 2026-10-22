@@ -1,0 +1,78 @@
+---
+- name: Cai lich kiem thu Phone Shop va thong bao Telegram
+  hosts: webservers
+  become: true
+  vars:
+    app_user: vanthoa
+    phone_shop_dir: /home/vanthoa/Phone-shop
+    phone_shop_env_file: /home/vanthoa/.config/infra/telegram.env
+    phone_shop_test_calendar: "*-*-* 07:00:00 Asia/Ho_Chi_Minh"
+    phone_shop_monitor_enabled: false
+
+  tasks:
+    - name: Kiem tra repo Phone-shop
+      ansible.builtin.stat:
+        path: "{{ phone_shop_dir }}/package.json"
+      register: phone_shop_package
+
+    - name: Bao loi neu chua co repo Phone-shop
+      ansible.builtin.fail:
+        msg: "Khong tim thay {{ phone_shop_dir }}/package.json"
+      when: not phone_shop_package.stat.exists
+
+    - name: Kiem tra file cau hinh Telegram
+      ansible.builtin.stat:
+        path: "{{ phone_shop_env_file }}"
+      register: telegram_env
+
+    - name: Bao loi neu chua co file cau hinh Telegram
+      ansible.builtin.fail:
+        msg: "Khong tim thay {{ phone_shop_env_file }}"
+      when: not telegram_env.stat.exists
+
+    - name: Khoa quyen doc file bi mat Telegram
+      ansible.builtin.file:
+        path: "{{ phone_shop_env_file }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0600"
+
+    - name: Cai script chay Playwright va gui Telegram
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/run-phone-shop-e2e.sh"
+        dest: /usr/local/bin/run-phone-shop-e2e
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Cai systemd service
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-e2e.service.j2"
+        dest: /etc/systemd/system/phone-shop-e2e.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Nap lai systemd
+
+    - name: Cai systemd timer
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-e2e.timer.j2"
+        dest: /etc/systemd/system/phone-shop-e2e.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Nap lai systemd
+
+    - name: Ap dung thay doi systemd ngay
+      ansible.builtin.meta: flush_handlers
+
+    - name: Dat trang thai lich kiem thu
+      ansible.builtin.systemd_service:
+        name: phone-shop-e2e.timer
+        enabled: "{{ phone_shop_monitor_enabled | bool }}"
+        state: "{{ 'started' if phone_shop_monitor_enabled | bool else 'stopped' }}"
+
+  handlers:
+    - name: Nap lai systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
