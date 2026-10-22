@@ -61,7 +61,8 @@
         name: phoneshop
         host: localhost
         plugin: caching_sha2_password
-        password: "{{ phone_shop_db_password }}"
+        plugin_auth_string: "{{ phone_shop_db_password }}"
+        update_password: on_create
         priv: "phoneshop_db.*:ALL"
         state: present
         login_unix_socket: /var/run/mysqld/mysqld.sock
