@@ -1,0 +1,209 @@
+---
+- name: Trien khai day du Phone Shop
+  hosts: webservers
+  become: true
+  vars:
+    app_user: vanthoa
+    phone_shop_repo: git@github.com:thoa2005/Phone-shop.git
+    phone_shop_dir: /home/vanthoa/Phone-shop
+    secrets_dir: /home/vanthoa/.config/infra
+    backend_jar: /home/vanthoa/Phone-shop/phoneshop-backend/target/phoneshop-backend-1.0.0.jar
+
+  tasks:
+    - name: Dam bao cac goi trien khai da duoc cai
+      ansible.builtin.apt:
+        name:
+          - git
+          - nginx
+          - openjdk-17-jdk
+          - maven
+          - nodejs
+          - npm
+          - mysql-server
+          - python3-pymysql
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Bat MySQL va Nginx cung he thong
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - mysql
+        - nginx
+
+    - name: Tao thu muc chua bi mat ngoai Git
+      ansible.builtin.file:
+        path: "{{ secrets_dir }}"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0700"
+
+    - name: Sinh hoac doc lai mat khau database va khoa JWT
+      ansible.builtin.set_fact:
+        phone_shop_db_password: "{{ lookup('ansible.builtin.password', secrets_dir + '/phoneshop-db-password', length=32, chars=['ascii_letters', 'digits']) }}"
+        phone_shop_jwt_secret: "{{ lookup('ansible.builtin.password', secrets_dir + '/phoneshop-jwt-secret', length=64, chars=['ascii_letters', 'digits']) }}"
+      no_log: true
+
+    - name: Tao database Phone Shop
+      community.mysql.mysql_db:
+        name: phoneshop_db
+        state: present
+        encoding: utf8mb4
+        collation: utf8mb4_unicode_ci
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+
+    - name: Tao tai khoan MySQL rieng cho ung dung
+      community.mysql.mysql_user:
+        name: phoneshop
+        host: localhost
+        password: "{{ phone_shop_db_password }}"
+        priv: "phoneshop_db.*:ALL"
+        state: present
+        login_unix_socket: /var/run/mysqld/mysqld.sock
+      no_log: true
+
+    - name: Tao thu muc cau hinh backend
+      ansible.builtin.file:
+        path: /etc/phone-shop
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Tao file bien moi truong backend
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-backend.env.j2"
+        dest: /etc/phone-shop/backend.env
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Cap nhat ma nguon Phone Shop tu GitHub
+      ansible.builtin.git:
+        repo: "{{ phone_shop_repo }}"
+        dest: "{{ phone_shop_dir }}"
+        version: main
+        update: true
+        accept_hostkey: true
+      become_user: "{{ app_user }}"
+      register: phone_shop_source
+
+    - name: Kiem tra file jar backend
+      ansible.builtin.stat:
+        path: "{{ backend_jar }}"
+      register: backend_artifact
+
+    - name: Build Spring Boot backend
+      ansible.builtin.command: mvn clean package -DskipTests
+      args:
+        chdir: "{{ phone_shop_dir }}/phoneshop-backend"
+      become_user: "{{ app_user }}"
+      when: phone_shop_source.changed or not backend_artifact.stat.exists
+
+    - name: Kiem tra ban build Next.js
+      ansible.builtin.stat:
+        path: "{{ phone_shop_dir }}/phoneshop-frontend/.next/BUILD_ID"
+      register: frontend_artifact
+
+    - name: Cai dependency frontend tu package-lock
+      ansible.builtin.command: npm ci --no-audit --no-fund
+      args:
+        chdir: "{{ phone_shop_dir }}/phoneshop-frontend"
+      become_user: "{{ app_user }}"
+      when: phone_shop_source.changed or not frontend_artifact.stat.exists
+
+    - name: Build Next.js frontend
+      ansible.builtin.command: npm run build
+      args:
+        chdir: "{{ phone_shop_dir }}/phoneshop-frontend"
+      environment:
+        NEXT_PUBLIC_API_URL: /api
+        NEXT_PUBLIC_UPLOAD_URL: /uploads
+      become_user: "{{ app_user }}"
+      when: phone_shop_source.changed or not frontend_artifact.stat.exists
+
+    - name: Tao thu muc upload
+      ansible.builtin.file:
+        path: "{{ phone_shop_dir }}/phoneshop-backend/uploads"
+        state: directory
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        mode: "0755"
+
+    - name: Cai systemd service backend
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-backend.service.j2"
+        dest: /etc/systemd/system/phone-shop-backend.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Cai systemd service frontend
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-frontend.service.j2"
+        dest: /etc/systemd/system/phone-shop-frontend.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Cai cau hinh Nginx cho Phone Shop
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-nginx.conf.j2"
+        dest: /etc/nginx/sites-available/phone-shop
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Bat site Phone Shop trong Nginx
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/phone-shop
+        dest: /etc/nginx/sites-enabled/phone-shop
+        state: link
+
+    - name: Tat site Nginx mac dinh
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Kiem tra cu phap Nginx
+      ansible.builtin.command: nginx -t
+      changed_when: false
+
+    - name: Nap lai systemd va khoi dong ung dung
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        enabled: true
+        state: restarted
+        daemon_reload: true
+      loop:
+        - phone-shop-backend
+        - phone-shop-frontend
+        - nginx
+
+    - name: Cho backend san sang
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8081/api/products
+        status_code: 200
+      register: backend_health
+      retries: 30
+      delay: 2
+      until: backend_health.status == 200
+
+    - name: Cho frontend san sang
+      ansible.builtin.uri:
+        url: http://127.0.0.1:3000
+        status_code: 200
+      register: frontend_health
+      retries: 30
+      delay: 2
+      until: frontend_health.status == 200
+
+    - name: Kiem tra ung dung qua Nginx
+      ansible.builtin.uri:
+        url: http://127.0.0.1/
+        status_code: 200

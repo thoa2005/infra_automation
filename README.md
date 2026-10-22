@@ -10,6 +10,7 @@ Dự án thực hành System Engineer: quản lý mã cấu hình bằng Git và
 - `scripts/Start-Infrastructure.ps1`: trên Windows, bật VM nếu cần, tìm IP bằng `vmrun`, kết nối SSH, cập nhật repo và chạy playbook.
 - `ansible/playbooks/phone-shop-prereqs.yml`: chuẩn bị Java 17, Maven, Node.js, npm, MySQL và Playwright/Chromium cho dự án Phone-shop.
 - `ansible/playbooks/phone-shop-monitor.yml`: cài script chạy Playwright, gửi kết quả qua Telegram và tạo lịch systemd hằng ngày.
+- `ansible/playbooks/phone-shop-deploy.yml`: tạo database/tài khoản MySQL, build Spring Boot và Next.js, chạy hai dịch vụ bằng systemd, rồi cấu hình Nginx reverse proxy.
 - `tests/`: bài kiểm thử trình duyệt mẫu. Repo Phone-shop hiện chưa có bài e2e; bài này chỉ xác nhận trang web trả HTTP 200.
 
 ## Chạy trên VM hiện tại
@@ -82,6 +83,25 @@ journalctl -u phone-shop-e2e.service -n 100 --no-pager
 ```
 
 `-e phone_shop_monitor_enabled=true` ghi đè biến mặc định để bật timer. `list-timers` cho biết lần chạy kế tiếp; `journalctl` xem kết quả và lỗi của lần chạy gần đây.
+
+## Triển khai Phone Shop
+
+Cài collection quản lý MySQL một lần cho tài khoản Ansible, sau đó chạy playbook:
+
+```bash
+ansible-galaxy collection install -r ansible/requirements.yml
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-deploy.yml -K
+```
+
+Playbook sinh mật khẩu database và khóa JWT tại `~/.config/infra/`, tạo `/etc/phone-shop/backend.env` với quyền `0600`, build mã nguồn và tạo ba dịch vụ `phone-shop-backend`, `phone-shop-frontend`, `nginx`. Các giá trị bí mật không được commit vào Git.
+
+Kiểm tra trạng thái sau khi triển khai:
+
+```bash
+systemctl status phone-shop-backend phone-shop-frontend nginx --no-pager
+curl -I http://127.0.0.1/
+curl http://127.0.0.1/api/products
+```
 
 Sau khi chạy playbook, kiểm tra thủ công trên Ubuntu:
 

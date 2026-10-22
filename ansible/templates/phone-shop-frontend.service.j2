@@ -1,0 +1,19 @@
+[Unit]
+Description=Phone Shop Next.js frontend
+After=network-online.target phone-shop-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ app_user }}
+Group={{ app_user }}
+WorkingDirectory={{ phone_shop_dir }}/phoneshop-frontend
+Environment=NODE_ENV=production
+Environment=NEXT_PUBLIC_API_URL=/api
+Environment=NEXT_PUBLIC_UPLOAD_URL=/uploads
+ExecStart=/usr/bin/npm start -- --hostname 127.0.0.1 --port 3000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
