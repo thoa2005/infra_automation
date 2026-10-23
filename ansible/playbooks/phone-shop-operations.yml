@@ -1,0 +1,144 @@
+---
+- name: Bao mat va van hanh Phone Shop
+  hosts: webservers
+  become: true
+  vars:
+    app_user: vanthoa
+    secrets_dir: /home/vanthoa/.config/infra
+
+  tasks:
+    - name: Dat mui gio Viet Nam
+      community.general.timezone:
+        name: Asia/Ho_Chi_Minh
+
+    - name: Cai cac goi van hanh
+      ansible.builtin.apt:
+        name:
+          - ufw
+          - gzip
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Cho phep SSH truoc khi bat firewall
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+
+    - name: Cho phep HTTP va HTTPS qua Nginx
+      community.general.ufw:
+        rule: allow
+        name: Nginx Full
+
+    - name: Chan ket noi vao mac dinh
+      community.general.ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Cho phep ket noi ra ngoai mac dinh
+      community.general.ufw:
+        direction: outgoing
+        policy: allow
+
+    - name: Bat firewall UFW
+      community.general.ufw:
+        state: enabled
+
+    - name: Tao thu muc cau hinh journald
+      ansible.builtin.file:
+        path: /etc/systemd/journald.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Gioi han dung luong va thoi gian luu log
+      ansible.builtin.copy:
+        dest: /etc/systemd/journald.conf.d/phone-shop-limits.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          [Journal]
+          SystemMaxUse=500M
+          RuntimeMaxUse=100M
+          MaxRetentionSec=14day
+          MaxFileSec=1day
+      notify: Khoi dong lai journald
+
+    - name: Doc lai mat khau database da sinh
+      ansible.builtin.set_fact:
+        phone_shop_db_password: "{{ lookup('ansible.builtin.password', secrets_dir + '/phoneshop-db-password', length=32, chars=['ascii_letters', 'digits']) }}"
+      no_log: true
+
+    - name: Tao file dang nhap rieng cho backup MySQL
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-backup.cnf.j2"
+        dest: /etc/phone-shop/backup.cnf
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
+    - name: Tao thu muc backup
+      ansible.builtin.file:
+        path: /var/backups/phone-shop
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Cai script backup MySQL
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/backup-phone-shop.sh"
+        dest: /usr/local/sbin/backup-phone-shop
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Cai systemd service backup
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-backup.service.j2"
+        dest: /etc/systemd/system/phone-shop-backup.service
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Cai systemd timer backup
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-backup.timer.j2"
+        dest: /etc/systemd/system/phone-shop-backup.timer
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Nap systemd va bat lich backup
+      ansible.builtin.systemd_service:
+        name: phone-shop-backup.timer
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Chay backup thu ngay bay gio
+      ansible.builtin.systemd_service:
+        name: phone-shop-backup.service
+        state: started
+
+    - name: Tim file backup vua tao
+      ansible.builtin.find:
+        paths: /var/backups/phone-shop
+        patterns: "phoneshop-*.sql.gz"
+        file_type: file
+      register: phone_shop_backups
+
+    - name: Xac nhan backup da duoc tao
+      ansible.builtin.assert:
+        that:
+          - phone_shop_backups.matched | int > 0
+        fail_msg: Khong tim thay file backup MySQL sau khi chay service
+
+  handlers:
+    - name: Khoi dong lai journald
+      ansible.builtin.systemd_service:
+        name: systemd-journald
+        state: restarted

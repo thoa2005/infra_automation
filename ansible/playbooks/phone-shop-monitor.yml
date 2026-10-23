@@ -7,7 +7,7 @@
     phone_shop_dir: /home/vanthoa/Phone-shop
     phone_shop_env_file: /home/vanthoa/.config/infra/telegram.env
     phone_shop_test_calendar: "*-*-* 07:00:00 Asia/Ho_Chi_Minh"
-    phone_shop_monitor_enabled: false
+    phone_shop_monitor_enabled: true
 
   tasks:
     - name: Kiem tra repo Phone-shop

@@ -11,6 +11,7 @@ Dự án thực hành System Engineer: quản lý mã cấu hình bằng Git và
 - `ansible/playbooks/phone-shop-prereqs.yml`: chuẩn bị Java 17, Maven, Node.js, npm, MySQL và Playwright/Chromium cho dự án Phone-shop.
 - `ansible/playbooks/phone-shop-monitor.yml`: cài script chạy Playwright, gửi kết quả qua Telegram và tạo lịch systemd hằng ngày.
 - `ansible/playbooks/phone-shop-deploy.yml`: tạo database/tài khoản MySQL, build Spring Boot và Next.js, chạy hai dịch vụ bằng systemd, rồi cấu hình Nginx reverse proxy.
+- `ansible/playbooks/phone-shop-operations.yml`: đặt múi giờ, bật UFW, giới hạn journal và sao lưu MySQL hằng ngày.
 - `tests/`: bài kiểm thử trình duyệt mẫu. Repo Phone-shop hiện chưa có bài e2e; bài này chỉ xác nhận trang web trả HTTP 200.
 
 ## Chạy trên VM hiện tại
@@ -74,15 +75,32 @@ ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-mon
 sudo /usr/local/bin/run-phone-shop-e2e --notification-test
 ```
 
-Playbook mặc định chỉ cài timer và giữ nó ở trạng thái tắt vì ứng dụng chưa được triển khai. Sau khi backend, frontend và database đã chạy ổn, bật lịch 07:00 hằng ngày:
+Playbook mặc định bật lịch kiểm thử lúc 07:00 hằng ngày:
 
 ```bash
-ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-monitor.yml -K -e phone_shop_monitor_enabled=true
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-monitor.yml -K
 systemctl list-timers phone-shop-e2e.timer
 journalctl -u phone-shop-e2e.service -n 100 --no-pager
 ```
 
-`-e phone_shop_monitor_enabled=true` ghi đè biến mặc định để bật timer. `list-timers` cho biết lần chạy kế tiếp; `journalctl` xem kết quả và lỗi của lần chạy gần đây.
+`list-timers` cho biết lần chạy kế tiếp; `journalctl` xem kết quả và lỗi của lần chạy gần đây. Có thể tắt lịch khi chạy playbook bằng `-e phone_shop_monitor_enabled=false`.
+
+## Bảo mật, log và backup
+
+```bash
+ansible-galaxy collection install -r ansible/requirements.yml
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-operations.yml -K
+```
+
+Playbook mở cổng `22`, `80`, `443`, chặn kết nối đến các cổng khác bằng UFW, đặt múi giờ `Asia/Ho_Chi_Minh`, giới hạn journal ở 500 MB hoặc 14 ngày, và sao lưu database lúc 02:00 hằng ngày. File backup nằm trong `/var/backups/phone-shop/` và được giữ 14 ngày.
+
+Kiểm tra:
+
+```bash
+sudo ufw status verbose
+systemctl list-timers phone-shop-backup.timer phone-shop-e2e.timer --all
+sudo ls -lh /var/backups/phone-shop/
+```
 
 ## Triển khai Phone Shop
 

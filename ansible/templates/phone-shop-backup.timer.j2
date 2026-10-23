@@ -1,0 +1,10 @@
+[Unit]
+Description=Back up the Phone Shop database every day
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 Asia/Ho_Chi_Minh
+Persistent=true
+Unit=phone-shop-backup.service
+
+[Install]
+WantedBy=timers.target
