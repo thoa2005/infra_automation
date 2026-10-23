@@ -1,0 +1,30 @@
+---
+- name: Chuan bi VM cho GitHub Actions CD
+  hosts: webservers
+  become: true
+  vars:
+    runner_user: vanthoa
+
+  tasks:
+    - name: Cai cong cu khoa trien khai
+      ansible.builtin.apt:
+        name: util-linux
+        state: present
+
+    - name: Cai script trien khai chi do root quan ly
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/deploy-phone-shop.sh"
+        dest: /usr/local/sbin/deploy-phone-shop
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Cho runner chi duoc goi script trien khai
+      ansible.builtin.copy:
+        dest: /etc/sudoers.d/phone-shop-deploy
+        owner: root
+        group: root
+        mode: "0440"
+        validate: /usr/sbin/visudo -cf %s
+        content: |
+          {{ runner_user }} ALL=(root) NOPASSWD: /usr/local/sbin/deploy-phone-shop [0-9a-f]*

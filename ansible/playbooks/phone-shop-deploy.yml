@@ -5,6 +5,7 @@
   vars:
     app_user: vanthoa
     phone_shop_repo: git@github.com:thoa2005/Phone-shop.git
+    phone_shop_version: main
     phone_shop_dir: /home/vanthoa/Phone-shop
     secrets_dir: /home/vanthoa/.config/infra
     backend_jar: /home/vanthoa/Phone-shop/phoneshop-backend/target/phoneshop-backend-1.0.0.jar
@@ -98,7 +99,7 @@
       ansible.builtin.git:
         repo: "{{ phone_shop_repo }}"
         dest: "{{ phone_shop_dir }}"
-        version: main
+        version: "{{ phone_shop_version }}"
         update: true
         accept_hostkey: true
       become_user: "{{ app_user }}"

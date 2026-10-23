@@ -12,6 +12,7 @@ Dự án thực hành System Engineer: quản lý mã cấu hình bằng Git và
 - `ansible/playbooks/phone-shop-monitor.yml`: cài script chạy Playwright, gửi kết quả qua Telegram và tạo lịch systemd hằng ngày.
 - `ansible/playbooks/phone-shop-deploy.yml`: tạo database/tài khoản MySQL, build Spring Boot và Next.js, chạy hai dịch vụ bằng systemd, rồi cấu hình Nginx reverse proxy.
 - `ansible/playbooks/phone-shop-operations.yml`: đặt múi giờ, bật UFW, giới hạn journal và sao lưu MySQL hằng ngày.
+- `ansible/playbooks/phone-shop-cicd.yml`: cài lệnh triển khai giới hạn cho GitHub Actions runner.
 - `tests/`: bài kiểm thử trình duyệt mẫu. Repo Phone-shop hiện chưa có bài e2e; bài này chỉ xác nhận trang web trả HTTP 200.
 
 ## Chạy trên VM hiện tại
@@ -135,4 +136,22 @@ Lệnh thứ nhất kiểm tra HTTP ngay; lệnh thứ hai xem 10 bản ghi gầ
 
 - Tạo VM mới từ một nguồn Ubuntu sạch bằng mã.
 - Dùng một máy điều khiển Ansible cấu hình VM khác qua SSH.
-- Triển khai backend, frontend và schema MySQL cho Phone-shop; bật lịch Playwright sau khi ứng dụng chạy ổn; CI và bài dựng lại hạ tầng từ đầu.
+- CI/CD cần đăng ký self-hosted runner trên VM; bài dựng lại hạ tầng từ đầu vẫn chưa hoàn thành.
+
+## CI/CD
+
+Repo `Phone-shop` chạy GitHub Actions khi có push hoặc pull request vào `main`:
+
+1. GitHub build Spring Boot bằng Java 17 và Maven.
+2. GitHub build Next.js bằng Node.js 22.
+3. Khi hai bước đạt và sự kiện là push vào `main`, job `deploy` chạy trên self-hosted runner trong VM.
+4. Runner gọi `/usr/local/sbin/deploy-phone-shop` với đúng commit đã vượt qua CI; script chạy Ansible và kiểm tra HTTP sau triển khai.
+
+Chuẩn bị quyền triển khai trên VM một lần:
+
+```bash
+cd ~/infra_automation
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-cicd.yml -K
+```
+
+Runner cần các nhãn `self-hosted`, `linux`, `x64`, `phone-shop`. Token đăng ký runner chỉ dùng lúc kết nối VM với repo GitHub và không được commit.
