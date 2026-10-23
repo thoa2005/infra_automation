@@ -4,12 +4,94 @@
   become: true
   vars:
     runner_user: vanthoa
+    runner_repo: https://github.com/thoa2005/Phone-shop
+    runner_name: phone-shop-vm
+    runner_version: "2.338.0"
+    runner_sha256: af4b794c1bc41d73d40535e3fe092a39f9679cd8d965954c2aca25a05ca41d32
+    runner_dir: "/home/{{ runner_user }}/actions-runner"
+    runner_service: actions.runner.thoa2005-Phone-shop.phone-shop-vm.service
 
   tasks:
     - name: Cai cong cu khoa trien khai
       ansible.builtin.apt:
-        name: util-linux
+        name:
+          - util-linux
+          - curl
+          - tar
         state: present
+
+    - name: Tao thu muc GitHub Actions runner
+      ansible.builtin.file:
+        path: "{{ runner_dir }}"
+        state: directory
+        owner: "{{ runner_user }}"
+        group: "{{ runner_user }}"
+        mode: "0755"
+
+    - name: Tai GitHub Actions runner
+      ansible.builtin.get_url:
+        url: "https://github.com/actions/runner/releases/download/v{{ runner_version }}/actions-runner-linux-x64-{{ runner_version }}.tar.gz"
+        dest: "/tmp/actions-runner-linux-x64-{{ runner_version }}.tar.gz"
+        checksum: "sha256:{{ runner_sha256 }}"
+        mode: "0644"
+
+    - name: Giai nen GitHub Actions runner
+      ansible.builtin.unarchive:
+        src: "/tmp/actions-runner-linux-x64-{{ runner_version }}.tar.gz"
+        dest: "{{ runner_dir }}"
+        remote_src: true
+        owner: "{{ runner_user }}"
+        group: "{{ runner_user }}"
+        creates: "{{ runner_dir }}/config.sh"
+
+    - name: Kiem tra runner da dang ky chua
+      ansible.builtin.stat:
+        path: "{{ runner_dir }}/.runner"
+      register: runner_registration
+
+    - name: Dang ky runner voi repo Phone Shop
+      ansible.builtin.command:
+        argv:
+          - ./config.sh
+          - --unattended
+          - --url
+          - "{{ runner_repo }}"
+          - --token
+          - "{{ github_runner_token }}"
+          - --name
+          - "{{ runner_name }}"
+          - --labels
+          - phone-shop
+          - --work
+          - _work
+          - --replace
+      args:
+        chdir: "{{ runner_dir }}"
+      become_user: "{{ runner_user }}"
+      no_log: true
+      when:
+        - not runner_registration.stat.exists
+        - github_runner_token is defined
+
+    - name: Yeu cau token neu runner chua dang ky
+      ansible.builtin.assert:
+        that:
+          - runner_registration.stat.exists or github_runner_token is defined
+        fail_msg: Can truyen github_runner_token dung mot lan de dang ky runner
+      no_log: true
+
+    - name: Cai runner thanh dich vu systemd
+      ansible.builtin.command: ./svc.sh install {{ runner_user }}
+      args:
+        chdir: "{{ runner_dir }}"
+        creates: "/etc/systemd/system/{{ runner_service }}"
+
+    - name: Bat GitHub Actions runner
+      ansible.builtin.systemd_service:
+        name: "{{ runner_service }}"
+        enabled: true
+        state: started
+        daemon_reload: true
 
     - name: Cai script trien khai chi do root quan ly
       ansible.builtin.copy:
