@@ -13,6 +13,8 @@ readonly INVENTORY="${INFRA_DIR}/ansible/inventory/hosts.ini"
 readonly PLAYBOOK="${INFRA_DIR}/ansible/playbooks/phone-shop-deploy.yml"
 readonly LOCK_FILE="/run/lock/phone-shop-deploy.lock"
 
+export ANSIBLE_COLLECTIONS_PATH="/home/${APP_USER}/.ansible/collections:/usr/share/ansible/collections"
+
 exec 9>"${LOCK_FILE}"
 if ! flock -n 9; then
   echo "Dang co mot lan trien khai Phone Shop khac dang chay." >&2
