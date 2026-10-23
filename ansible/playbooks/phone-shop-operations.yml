@@ -137,6 +137,14 @@
           - phone_shop_backups.matched | int > 0
         fail_msg: Khong tim thay file backup MySQL sau khi chay service
 
+    - name: Kiem tra file backup moi nhat doc duoc
+      ansible.builtin.command:
+        argv:
+          - gzip
+          - -t
+          - "{{ (phone_shop_backups.files | sort(attribute='mtime', reverse=true) | first).path }}"
+      changed_when: false
+
   handlers:
     - name: Khoi dong lai journald
       ansible.builtin.systemd_service:

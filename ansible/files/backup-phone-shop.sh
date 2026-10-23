@@ -11,6 +11,7 @@ mkdir -p "$backup_dir"
 
 mysqldump \
   --defaults-extra-file=/etc/phone-shop/backup.cnf \
+  --no-tablespaces \
   --single-transaction \
   --routines \
   --triggers \
