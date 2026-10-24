@@ -1,5 +1,7 @@
 # Hạ tầng tự động hóa
 
+Hướng dẫn đầy đủ về kiến trúc, triển khai, CI/CD, kiểm thử, sao lưu và cách kiểm tra máy chủ: [docs/HUONG-DAN-VAN-HANH-PHONE-SHOP.md](docs/HUONG-DAN-VAN-HANH-PHONE-SHOP.md).
+
 Dự án thực hành System Engineer: quản lý mã cấu hình bằng Git và dùng Ansible để cấu hình Nginx trên Ubuntu. VM hiện tại được tạo thủ công trong VMware Workstation; phần tạo VM mới bằng mã chưa hoàn thành.
 
 ## Những gì đã tự động hóa
