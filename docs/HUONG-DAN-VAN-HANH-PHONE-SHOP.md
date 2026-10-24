@@ -93,7 +93,371 @@ GitHub không SSH từ Internet vào IP riêng `192.168.100.4`. Runner trong VM 
 - **GitHub Actions runner**: nhận job CD từ GitHub và triển khai trong VM.
 - **UFW**: firewall của Ubuntu.
 
-## 4. Các file tự động hóa quan trọng
+## 4. Máy chủ đã được xây dựng như thế nào và kiểm tra ra sao
+
+Phần này đi theo từng chức năng. Mỗi mục đều nêu trạng thái đã làm, cách triển khai, lệnh kiểm tra và cách đọc kết quả.
+
+### 4.1. Máy ảo và kết nối mạng
+
+**Đã làm được gì**
+
+- Ubuntu chạy trong VMware Workstation.
+- Card `ens33` dùng chế độ Bridged nên VM có một IP riêng trong mạng LAN.
+- Windows có thể SSH và mở website trong VM.
+- IP hiện tại là `192.168.100.4/24`, được cấp bằng DHCP.
+
+**Đã làm như thế nào**
+
+Card mạng của VM được chọn `Bridged: Connected directly to the physical network`, đồng thời bật `Connected` và `Connect at power on`. Netplan trong Ubuntu đặt `dhcp4: true`, nên router cấp IPv4 cho `ens33`.
+
+**Kiểm tra**
+
+```bash
+ip -4 -brief addr show ens33
+ip route
+```
+
+- `ip -4`: chỉ xem IPv4.
+- `-brief`: hiển thị ngắn gọn.
+- `addr show ens33`: chỉ xem card `ens33`.
+- `ip route`: xem đường đi mạng; dòng bắt đầu bằng `default via` cho biết gateway.
+
+Kết quả đúng phải có `ens33 UP` và một địa chỉ dạng `192.168.100.x/24`. Nếu IP thay đổi, dùng IP mới để SSH và mở web.
+
+Từ Windows kiểm tra kết nối:
+
+```powershell
+Test-NetConnection 192.168.100.4 -Port 22
+Test-NetConnection 192.168.100.4 -Port 80
+```
+
+`TcpTestSucceeded : True` nghĩa là Windows kết nối được tới SSH hoặc website.
+
+### 4.2. SSH và phiên terminal tmux
+
+**Đã làm được gì**
+
+- Windows đăng nhập Ubuntu bằng SSH key mà không cần đưa mật khẩu vào câu lệnh.
+- Phiên tmux `cowork` được dùng để bạn có thể nhìn các lệnh chạy trong cùng terminal.
+
+**Đã làm như thế nào**
+
+Public key của Windows được thêm vào `~/.ssh/authorized_keys` của user `vanthoa`. tmux chạy bên trong Ubuntu; nhiều terminal có thể cùng attach vào một session.
+
+**Kiểm tra**
+
+```powershell
+ssh vanthoa@192.168.100.4
+```
+
+Sau khi vào Ubuntu:
+
+```bash
+tmux ls
+tmux attach -t cowork
+```
+
+- `tmux ls`: liệt kê session.
+- `attach`: nối terminal hiện tại vào session.
+- `-t cowork`: chọn session có tên `cowork`.
+
+Nhấn `Ctrl+B`, thả ra rồi nhấn `D` để rời tmux nhưng vẫn giữ tiến trình chạy.
+
+### 4.3. Ansible tự động cấu hình máy
+
+**Đã làm được gì**
+
+Ansible có thể cài gói, tạo database, sinh file cấu hình, build ứng dụng, cài service, cấu hình Nginx, firewall, backup, kiểm thử và runner. Chạy lại playbook sẽ đưa máy về cùng trạng thái mong muốn.
+
+**Đã làm như thế nào**
+
+Inventory `ansible/inventory/hosts.ini` khai báo nhóm `webservers` với `localhost`. Các playbook YAML dùng module Ansible để thay cho việc gõ từng lệnh cài đặt thủ công.
+
+**Kiểm tra cú pháp mà chưa thay đổi máy**
+
+```bash
+cd ~/infra_automation
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-deploy.yml --syntax-check
+```
+
+- `-i`: chọn inventory.
+- `--syntax-check`: chỉ kiểm tra cấu trúc YAML và module, chưa chạy task.
+
+**Chạy thật**
+
+```bash
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-deploy.yml -K
+```
+
+`-K` yêu cầu Ansible hỏi mật khẩu sudo. Cuối kết quả cần có `failed=0` và `unreachable=0`. `changed` lớn hơn 0 nghĩa là Ansible vừa điều chỉnh máy; `changed=0` nghĩa là cấu hình đã đúng từ trước.
+
+### 4.4. Java, Node.js và môi trường chạy ứng dụng
+
+**Đã làm được gì**
+
+- Java 17 và Maven build/chạy Spring Boot.
+- Node.js 22 và npm build/chạy Next.js và Playwright.
+- Git và curl phục vụ lấy mã nguồn và kiểm tra HTTP.
+
+**Đã làm như thế nào**
+
+Playbook `phone-shop-prereqs.yml` và `phone-shop-deploy.yml` dùng module `apt` cài các gói. Frontend được cài dependency bằng `npm ci`; backend được build bằng Maven.
+
+**Kiểm tra**
+
+```bash
+java -version
+mvn -version
+node --version
+npm --version
+git --version
+curl --version | head -n 1
+```
+
+Nếu một lệnh báo `command not found`, gói tương ứng chưa được cài hoặc không nằm trong `PATH`.
+
+### 4.5. MySQL và dữ liệu Phone Shop
+
+**Đã làm được gì**
+
+- MySQL tự chạy cùng VM.
+- Database `phoneshop_db` đã được tạo với mã hóa `utf8mb4`.
+- Ứng dụng có tài khoản MySQL riêng tên `phoneshop`.
+- Mật khẩu database được sinh và lưu ngoài Git.
+
+**Đã làm như thế nào**
+
+`phone-shop-deploy.yml` dùng `ansible.mysql.mysql_db` và `ansible.mysql.mysql_user`. Mật khẩu được tạo trong `~/.config/infra/phoneshop-db-password`; biến môi trường backend nằm tại `/etc/phone-shop/backend.env` với quyền `0600`.
+
+**Kiểm tra an toàn, không in mật khẩu**
+
+```bash
+systemctl is-active mysql
+systemctl is-enabled mysql
+sudo mysql -N -e "SHOW DATABASES LIKE 'phoneshop_db';"
+sudo mysql -N -e "SELECT user,host FROM mysql.user WHERE user='phoneshop';"
+```
+
+- `is-active` cần trả `active`.
+- `is-enabled` cần trả `enabled`.
+- `-N` bỏ tiêu đề cột để kết quả dễ đọc.
+- Hai lệnh SQL chỉ kiểm tra tên database và tài khoản, không làm thay đổi dữ liệu.
+
+### 4.6. Spring Boot backend
+
+**Đã làm được gì**
+
+Backend được build thành file JAR, chạy bằng service `phone-shop-backend` và chỉ nghe trên loopback ở cổng `8081`.
+
+**Đã làm như thế nào**
+
+Ansible chạy `mvn clean package -DskipTests`, tạo `/etc/systemd/system/phone-shop-backend.service`, đọc biến bí mật từ `/etc/phone-shop/backend.env` và bật service tự khởi động.
+
+**Kiểm tra**
+
+```bash
+systemctl is-active phone-shop-backend
+systemctl is-enabled phone-shop-backend
+curl -sS -o /dev/null -w 'backend=%{http_code}\n' http://127.0.0.1:8081/api/products
+```
+
+Hai lệnh systemd cần trả `active` và `enabled`; curl cần in `backend=200`.
+
+### 4.7. Next.js frontend
+
+**Đã làm được gì**
+
+Frontend được build production, chạy bằng service `phone-shop-frontend` và chỉ nghe trên loopback ở cổng `3000`.
+
+**Đã làm như thế nào**
+
+Ansible chạy `npm ci` rồi `npm run build` với API URL là `/api`, tạo service systemd và chạy `npm start -- --hostname 127.0.0.1 --port 3000`.
+
+**Kiểm tra**
+
+```bash
+systemctl is-active phone-shop-frontend
+systemctl is-enabled phone-shop-frontend
+curl -sS -o /dev/null -w 'frontend=%{http_code}\n' http://127.0.0.1:3000/
+```
+
+Kết quả mong đợi là `active`, `enabled` và `frontend=200`.
+
+### 4.8. Nginx reverse proxy
+
+**Đã làm được gì**
+
+Người dùng chỉ cần truy cập cổng 80. Nginx chuyển `/` tới Next.js, còn `/api` và `/uploads` tới Spring Boot. Cổng nội bộ 3000 và 8081 không cần mở ra mạng LAN.
+
+**Đã làm như thế nào**
+
+Template `phone-shop-nginx.conf.j2` được cài vào `/etc/nginx/sites-available/phone-shop`, tạo symlink trong `sites-enabled` và tắt site mặc định.
+
+**Kiểm tra**
+
+```bash
+sudo nginx -t
+systemctl is-active nginx
+curl -sS -o /dev/null -w 'web=%{http_code}\n' http://127.0.0.1/
+curl -sS -o /dev/null -w 'api=%{http_code}\n' http://127.0.0.1/api/products
+```
+
+- `nginx -t` cần báo `syntax is ok` và `test is successful`.
+- Nginx cần `active`.
+- Web và API cần trả `200`.
+
+### 4.9. systemd và tự khởi động cùng VM
+
+**Đã làm được gì**
+
+Backend, frontend, Nginx, MySQL và GitHub runner đều được bật tự khởi động. Nếu tiến trình backend hoặc frontend lỗi, systemd thử chạy lại sau 5 giây.
+
+**Đã làm như thế nào**
+
+Ansible tạo unit file trong `/etc/systemd/system/`, gọi `daemon-reload`, rồi đặt `enabled: true` và `state: restarted` hoặc `started`.
+
+**Kiểm tra một lần cho tất cả dịch vụ**
+
+```bash
+systemctl is-active phone-shop-backend phone-shop-frontend nginx mysql actions.runner.thoa2005-Phone-shop.phone-shop-vm.service
+systemctl is-enabled phone-shop-backend phone-shop-frontend nginx mysql actions.runner.thoa2005-Phone-shop.phone-shop-vm.service
+```
+
+Mỗi lệnh phải in năm dòng. Tất cả dòng của lệnh đầu cần là `active`; tất cả dòng của lệnh sau cần là `enabled`.
+
+### 4.10. Firewall UFW và bảo vệ cổng
+
+**Đã làm được gì**
+
+Kết nối vào mặc định bị chặn. Chỉ OpenSSH và Nginx Full được cho phép, tương ứng cổng 22, 80 và 443. MySQL, backend và frontend không được mở trực tiếp ra LAN.
+
+**Đã làm như thế nào**
+
+`phone-shop-operations.yml` dùng module `community.general.ufw`: cho phép SSH trước, cho phép Nginx, đặt incoming deny, outgoing allow rồi bật UFW.
+
+**Kiểm tra**
+
+```bash
+sudo ufw status verbose
+ss -ltn | grep -E ':(22|80|443|3000|3306|8081)[[:space:]]'
+```
+
+Trong kết quả UFW phải có `Status: active`, `Default: deny (incoming)` và các rule OpenSSH/Nginx. Các cổng 3000, 3306 và 8081 phải gắn với địa chỉ loopback, không phải `0.0.0.0`.
+
+### 4.11. Log hệ thống
+
+**Đã làm được gì**
+
+Log của service được lưu bằng systemd journal. Dung lượng journal được giới hạn 500 MB, log runtime 100 MB và thời gian giữ tối đa 14 ngày.
+
+**Đã làm như thế nào**
+
+Ansible tạo `/etc/systemd/journald.conf.d/phone-shop-limits.conf` và khởi động lại `systemd-journald`.
+
+**Kiểm tra**
+
+```bash
+sudo cat /etc/systemd/journald.conf.d/phone-shop-limits.conf
+sudo journalctl --disk-usage
+sudo journalctl -u phone-shop-backend -n 30 --no-pager
+```
+
+- `--disk-usage`: xem journal đang chiếm bao nhiêu dung lượng.
+- `-u`: lọc theo service.
+- `-n 30`: lấy 30 dòng cuối.
+- `--no-pager`: in thẳng ra terminal.
+
+### 4.12. Backup MySQL tự động
+
+**Đã làm được gì**
+
+Database được dump và nén lúc 02:00 hằng ngày. Backup nằm trong `/var/backups/phone-shop/` và file quá 14 ngày được xóa.
+
+**Đã làm như thế nào**
+
+Ansible cài `/usr/local/sbin/backup-phone-shop`, tạo `phone-shop-backup.service` cùng `phone-shop-backup.timer`. Thông tin đăng nhập backup nằm trong `/etc/phone-shop/backup.cnf` với quyền `0600`.
+
+**Kiểm tra**
+
+```bash
+systemctl is-enabled phone-shop-backup.timer
+systemctl list-timers phone-shop-backup.timer --all
+sudo ls -lh /var/backups/phone-shop/
+sudo journalctl -u phone-shop-backup.service -n 30 --no-pager
+```
+
+Timer cần `enabled`, có thời điểm `NEXT` khoảng 02:00 và thư mục backup phải có file `.sql.gz`. Dùng `sudo gzip -t <ten-file.sql.gz>` để kiểm tra file nén không hỏng.
+
+### 4.13. Playwright và thông báo Telegram
+
+**Đã làm được gì**
+
+Playwright tự chạy lúc 07:00, kiểm thử quy trình thật trên trình duyệt Chromium rồi gửi bản tóm tắt đạt/lỗi tới Telegram. Nếu VM tắt lúc 07:00, timer chạy bù khi VM bật lại.
+
+**Đã làm như thế nào**
+
+`phone-shop-monitor.yml` cài `/usr/local/bin/run-phone-shop-e2e`, service `phone-shop-e2e.service` và timer `phone-shop-e2e.timer`. Token Telegram nằm trong `~/.config/infra/telegram.env` quyền `0600`, không nằm trong Git.
+
+**Kiểm tra**
+
+```bash
+systemctl is-enabled phone-shop-e2e.timer
+systemctl list-timers phone-shop-e2e.timer --all
+sudo journalctl -u phone-shop-e2e.service -n 100 --no-pager
+```
+
+Lần chạy ngày 24/10/2026 có 36 test đạt, 8 lỗi và 1 chập chờn. Điều này chứng minh lịch và Playwright đã chạy; các test lỗi phản ánh lỗi ứng dụng hoặc dữ liệu kiểm thử cần xử lý riêng.
+
+Gửi thử Telegram mà không chạy toàn bộ test:
+
+```bash
+sudo /usr/local/bin/run-phone-shop-e2e --notification-test
+```
+
+Lệnh cần báo đã gửi tin nhắn và bot Telegram phải nhận được tin thử.
+
+### 4.14. CI/CD GitHub Actions
+
+**Đã làm được gì**
+
+Mỗi push vào `main` tự build Spring Boot và Next.js trên GitHub. Khi cả hai build đạt, self-hosted runner trong VM triển khai đúng commit đó bằng Ansible rồi kiểm tra web/API.
+
+**Đã làm như thế nào**
+
+Workflow nằm tại `.github/workflows/ci-cd.yml` của repo Phone Shop. Runner `phone-shop-vm` chạy bằng systemd. Job deploy gọi `/usr/local/sbin/deploy-phone-shop <GITHUB_SHA>`; script dùng `flock` để ngăn hai lần deploy chạy cùng lúc.
+
+**Kiểm tra**
+
+1. Mở <https://github.com/thoa2005/Phone-shop/actions>.
+2. Xác nhận ba job Build Spring Boot, Build Next.js và Deploy production VM đều xanh.
+3. Trong VM chạy:
+
+```bash
+systemctl is-active actions.runner.thoa2005-Phone-shop.phone-shop-vm.service
+git -C ~/Phone-shop rev-parse --short HEAD
+```
+
+Runner cần trả `active`. Commit trên VM phải trùng commit được ghi trong lần chạy GitHub Actions.
+
+### 4.15. Snapshot VMware
+
+**Đã làm được gì**
+
+VM có snapshot `phone-shop-infra-complete-2026-10-23`, dùng làm điểm quay lại khi thử nghiệm làm hỏng hệ thống.
+
+**Đã làm như thế nào**
+
+Snapshot được tạo bởi VMware Workstation và lưu trạng thái đĩa VM tại thời điểm chụp. Nó không được tạo bởi Ansible và không chạy theo lịch.
+
+**Kiểm tra từ Windows**
+
+```powershell
+& 'C:\Program Files\VMware\VMware Workstation\vmrun.exe' -T ws listSnapshots 'D:\Infra\Machine_automation.vmx'
+```
+
+Kết quả phải liệt kê tên snapshot. Lệnh này chỉ đọc danh sách, không khôi phục hay thay đổi VM.
+
+## 5. Các file tự động hóa quan trọng
 
 ### Repo Phone Shop
 
@@ -125,7 +489,7 @@ Pull request chỉ build để kiểm tra. Pull request không chạy job Deploy
 
 Các file bí mật nằm trong `~/.config/infra/` và `/etc/phone-shop/` trên VM. Chúng không được lưu trong Git.
 
-## 5. Kiểm tra nhanh mỗi ngày
+## 6. Kiểm tra nhanh mỗi ngày
 
 ### Bước 1: Kiểm tra trên GitHub
 
@@ -260,7 +624,7 @@ Ngay sau khi bật VM, systemd có thể báo service là `active` trong khi Jav
 
 Hãy chờ khoảng 30 đến 60 giây rồi dùng hai lệnh HTTP ở Bước 4. Chỉ khi web và API trả `200` thì ứng dụng mới thật sự sẵn sàng.
 
-## 6. Kiểm tra CI/CD bằng một commit không đổi file
+## 7. Kiểm tra CI/CD bằng một commit không đổi file
 
 Đây là cách an toàn để chứng minh pipeline tự chạy mà không sửa mã nguồn.
 
@@ -293,7 +657,7 @@ git -C ~/Phone-shop rev-parse --short HEAD
 
 Mã ngắn in ra phải trùng với commit trên trang GitHub Actions.
 
-## 7. Xem log
+## 8. Xem log
 
 ### Log runner
 
@@ -331,7 +695,7 @@ sudo journalctl -u nginx -n 100 --no-pager
 sudo tail -n 100 /var/log/nginx/error.log
 ```
 
-## 8. Kiểm tra lịch tự động
+## 9. Kiểm tra lịch tự động
 
 ```bash
 systemctl list-timers phone-shop-backup.timer phone-shop-e2e.timer --all
@@ -375,7 +739,7 @@ sudo gzip -t /var/backups/phone-shop/ten-file-backup.sql.gz
 
 Lệnh không in lỗi và trả về terminal nghĩa là cấu trúc gzip hợp lệ. Việc khôi phục thử vào một database riêng vẫn là phép kiểm tra tốt nhất cho backup.
 
-## 9. Dựng lại cấu hình trên một VM Ubuntu mới
+## 10. Dựng lại cấu hình trên một VM Ubuntu mới
 
 Hiện tại Ansible tự cấu hình hệ điều hành và ứng dụng, nhưng chưa tự tạo VM VMware. Bạn vẫn phải tạo VM Ubuntu mới, tạo user và thiết lập mạng/SSH trước.
 
@@ -429,7 +793,7 @@ Cuối cùng đăng ký GitHub self-hosted runner bằng token đăng ký dùng 
 
 Mỗi VM mới sẽ có database trống và bộ bí mật riêng. Ansible cài cùng cấu hình và dịch vụ; Ansible không tự sao chép dữ liệu MySQL của VM cũ. Muốn giữ dữ liệu, phải khôi phục file backup vào VM mới.
 
-## 10. Snapshot VMware và khôi phục
+## 11. Snapshot VMware và khôi phục
 
 Snapshot hiện có tên `phone-shop-infra-complete-2026-10-23`. Snapshot lưu trạng thái VM tại một thời điểm để quay lại khi thử nghiệm làm hỏng máy.
 
@@ -446,7 +810,7 @@ Trên Windows có thể xem danh sách snapshot:
 
 Snapshot không thay thế backup database. Snapshot nằm cùng máy Windows; nếu ổ đĩa hỏng thì cả VM và snapshot có thể mất. File backup quan trọng nên được sao chép thêm sang nơi khác.
 
-## 11. Khi pipeline hoặc ứng dụng bị lỗi
+## 12. Khi pipeline hoặc ứng dụng bị lỗi
 
 ### Deploy đứng ở Queued
 
@@ -507,7 +871,7 @@ ip -4 addr show ens33
 
 Tìm dòng `inet`. Nếu IP không còn là `192.168.100.4`, dùng IP mới để SSH và mở web. GitHub runner vẫn hoạt động vì nó kết nối từ VM ra GitHub.
 
-## 12. Hoàn tác một lần triển khai lỗi
+## 13. Hoàn tác một lần triển khai lỗi
 
 Không dùng `git reset --hard` trên nhánh chung. Tạo một commit đảo thay đổi rồi push:
 
@@ -519,7 +883,7 @@ git push origin main
 
 `git revert` tạo commit mới để đảo nội dung commit lỗi. CI/CD sẽ kiểm tra và tự triển khai commit hoàn tác.
 
-## 13. Bảo mật
+## 14. Bảo mật
 
 - Không commit token GitHub, khóa SSH, mật khẩu MySQL hoặc token Telegram.
 - Token đăng ký runner chỉ dùng một lần và file tạm đã bị xóa sau khi đăng ký.
@@ -528,7 +892,7 @@ git push origin main
 - Script deploy kiểm tra commit phải là SHA 40 ký tự và dùng khóa `flock` để tránh hai lần deploy chạy cùng lúc.
 - Vì repo Phone Shop là public, chỉ người tin cậy mới nên có quyền push hoặc sửa workflow trên nhánh `main`.
 
-## 14. Phần chưa tự động hóa hoặc chưa phù hợp production
+## 15. Phần chưa tự động hóa hoặc chưa phù hợp production
 
 - Việc tạo VM VMware mới vẫn làm thủ công.
 - IP `192.168.100.4` là IP DHCP trong LAN, chưa phải IP tĩnh và chưa phải địa chỉ Internet công khai.
@@ -540,7 +904,7 @@ git push origin main
 
 Như vậy, hệ thống hiện là một lab tự động hóa khá đầy đủ cho một VM. Nó chưa phải kiến trúc production có khả năng chịu lỗi hoặc mở rộng nhiều máy.
 
-## 15. Các thuật ngữ
+## 16. Các thuật ngữ
 
 - **CI**: tự build và kiểm tra mã nguồn sau khi push hoặc tạo pull request.
 - **CD**: tự đưa phiên bản đã qua CI lên máy chạy ứng dụng.
@@ -552,7 +916,7 @@ Như vậy, hệ thống hiện là một lab tự động hóa khá đầy đ�
 - **Idempotent**: chạy Ansible nhiều lần vẫn đưa hệ thống về cùng trạng thái mong muốn.
 - **Reverse proxy**: Nginx nhận truy cập ở cổng 80 rồi chuyển yêu cầu tới Next.js hoặc Spring Boot.
 
-## 16. Checklist xác nhận toàn bộ hệ thống tốt
+## 17. Checklist xác nhận toàn bộ hệ thống tốt
 
 - [ ] GitHub Actions có ba job màu xanh.
 - [ ] Runner là `active` và `enabled`.
