@@ -8,6 +8,14 @@
     phone_shop_env_file: /home/vanthoa/.config/infra/telegram.env
     phone_shop_test_calendar: "*-*-* 07:00:00 Asia/Ho_Chi_Minh"
     phone_shop_monitor_enabled: true
+    phone_shop_health_monitor_enabled: true
+    phone_shop_monitor_interval: 5min
+    phone_shop_monitor_cpu_threshold: 90
+    phone_shop_monitor_ram_threshold: 85
+    phone_shop_monitor_swap_threshold: 85
+    phone_shop_monitor_disk_threshold: 85
+    phone_shop_monitor_failure_count: 2
+    phone_shop_monitor_backup_max_age_hours: 36
 
   tasks:
     - name: Kiem tra repo Phone-shop
@@ -63,6 +71,56 @@
         mode: "0644"
       notify: Nap lai systemd
 
+    - name: Tao thu muc trang thai cho bo giam sat
+      ansible.builtin.file:
+        path: /var/lib/phone-shop-monitor
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Bao dam thu muc cau hinh Phone Shop ton tai
+      ansible.builtin.file:
+        path: /etc/phone-shop
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Cai script giam sat tai nguyen va dich vu
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/monitor-phone-shop.sh"
+        dest: /usr/local/sbin/monitor-phone-shop
+        owner: root
+        group: root
+        mode: "0750"
+
+    - name: Cai nguong canh bao cho bo giam sat
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-health-monitor.env.j2"
+        dest: /etc/phone-shop/health-monitor.env
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Cai service giam sat suc khoe
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-health-monitor.service.j2"
+        dest: /etc/systemd/system/phone-shop-health-monitor.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Nap lai systemd
+
+    - name: Cai timer giam sat suc khoe
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/../templates/phone-shop-health-monitor.timer.j2"
+        dest: /etc/systemd/system/phone-shop-health-monitor.timer
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Nap lai systemd
+
     - name: Ap dung thay doi systemd ngay
       ansible.builtin.meta: flush_handlers
 
@@ -71,6 +129,12 @@
         name: phone-shop-e2e.timer
         enabled: "{{ phone_shop_monitor_enabled | bool }}"
         state: "{{ 'started' if phone_shop_monitor_enabled | bool else 'stopped' }}"
+
+    - name: Dat trang thai lich giam sat suc khoe
+      ansible.builtin.systemd_service:
+        name: phone-shop-health-monitor.timer
+        enabled: "{{ phone_shop_health_monitor_enabled | bool }}"
+        state: "{{ 'started' if phone_shop_health_monitor_enabled | bool else 'stopped' }}"
 
   handlers:
     - name: Nap lai systemd

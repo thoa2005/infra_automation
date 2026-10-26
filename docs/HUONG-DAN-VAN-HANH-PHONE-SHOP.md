@@ -30,6 +30,7 @@ Hệ thống đã có các phần sau:
 - systemd journal lưu log và được giới hạn tối đa 500 MB, thời gian giữ tối đa 14 ngày.
 - MySQL được nén và sao lưu tự động lúc 02:00 hằng ngày, giữ 14 ngày.
 - Playwright chạy tự động lúc 07:00 hằng ngày và gửi kết quả tới Telegram.
+- Bộ giám sát kiểm tra tài nguyên, dịch vụ, HTTP, backup và Playwright mỗi 5 phút rồi gửi cảnh báo/phục hồi qua Telegram.
 - GitHub lưu mã nguồn Phone Shop.
 - GitHub Actions tự build Spring Boot bằng Java 17.
 - GitHub Actions tự build Next.js bằng Node.js 22.
@@ -72,6 +73,7 @@ systemd trong VM:
   |-- tự khởi động các dịch vụ trên
   |-- 02:00 chạy backup MySQL
   |-- 07:00 chạy Playwright và gửi Telegram
+  |-- mỗi 5 phút kiểm tra sức khỏe và gửi cảnh báo Telegram
   +-- chạy GitHub Actions self-hosted runner
 
 git push origin main
@@ -470,6 +472,46 @@ sudo journalctl -fu phone-shop-e2e.service
 
 - `systemctl start --no-block`: yêu cầu systemd bắt đầu test rồi trả terminal ngay để có thể xem log.
 - `journalctl -f`: theo dõi log mới liên tục; nhấn `Ctrl+C` chỉ dừng xem log, không dừng test.
+
+#### Bước 6.3: Cài bộ giám sát sức khỏe máy chủ
+
+Playbook `phone-shop-monitor.yml` còn cài:
+
+- `/usr/local/sbin/monitor-phone-shop`: script thực hiện các phép kiểm tra.
+- `/etc/phone-shop/health-monitor.env`: các ngưỡng cảnh báo.
+- `phone-shop-health-monitor.service`: chạy một lượt kiểm tra.
+- `phone-shop-health-monitor.timer`: gọi service mỗi 5 phút.
+- `/var/lib/phone-shop-monitor/`: nhớ lỗi nào đã cảnh báo để không gửi lặp lại.
+
+Ngưỡng mặc định:
+
+- CPU từ 90%.
+- RAM, swap hoặc ổ đĩa từ 85%.
+- Backup mới nhất quá 36 giờ.
+- Lỗi phải xuất hiện hai lần kiểm tra liên tiếp mới gửi Telegram.
+
+Ngoài tài nguyên, script kiểm tra Nginx, MySQL, Spring Boot, Next.js, GitHub runner, HTTP của web/API, kết quả backup và Playwright. Khi một lỗi đã cảnh báo trở lại bình thường, bot gửi tin `ĐÃ PHỤC HỒI`.
+
+Cài bằng cùng playbook:
+
+```bash
+cd ~/infra_automation
+ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-monitor.yml -K
+```
+
+Kiểm tra timer, chạy ngay một lượt và xem log:
+
+```bash
+systemctl list-timers phone-shop-health-monitor.timer --all
+sudo systemctl start phone-shop-health-monitor.service
+sudo journalctl -u phone-shop-health-monitor.service -n 100 --no-pager
+```
+
+Gửi tin thử mà không tạo sự cố:
+
+```bash
+sudo /usr/local/sbin/monitor-phone-shop --notification-test
+```
 
 ### Giai đoạn 7: Firewall, giới hạn log và backup database
 
@@ -938,7 +980,36 @@ sudo /usr/local/bin/run-phone-shop-e2e --notification-test
 
 Lệnh cần báo đã gửi tin nhắn và bot Telegram phải nhận được tin thử.
 
-### 5.14. CI/CD GitHub Actions
+### 5.14. Giám sát tài nguyên, dịch vụ và HTTP
+
+**Đã làm được gì**
+
+Máy kiểm tra mỗi 5 phút và gửi Telegram khi CPU, RAM, swap hoặc ổ đĩa vượt ngưỡng; dịch vụ dừng; web/API không trả 200; backup quá cũ hoặc lần Playwright gần nhất thất bại. Bot chỉ gửi một cảnh báo cho mỗi sự cố và báo lại khi phục hồi.
+
+**Đã làm như thế nào**
+
+`phone-shop-monitor.yml` cài script `/usr/local/sbin/monitor-phone-shop`, file ngưỡng `/etc/phone-shop/health-monitor.env`, một service oneshot và một systemd timer. Thư mục `/var/lib/phone-shop-monitor` lưu bộ đếm và trạng thái đã cảnh báo.
+
+**Kiểm tra**
+
+```bash
+systemctl is-enabled phone-shop-health-monitor.timer
+systemctl list-timers phone-shop-health-monitor.timer --all
+sudo systemctl start phone-shop-health-monitor.service
+sudo journalctl -u phone-shop-health-monitor.service -n 100 --no-pager
+```
+
+Timer cần trả `enabled`. Log một lượt bình thường sẽ có các dòng bắt đầu bằng `OK:` và dòng tổng kết. Nếu có lỗi, log ghi `CANH BAO lan 1/2`; lần kiểm tra thứ hai vẫn lỗi mới gửi Telegram.
+
+Xem hoặc đổi ngưỡng:
+
+```bash
+sudo cat /etc/phone-shop/health-monitor.env
+```
+
+Hãy sửa biến trong playbook rồi chạy lại Ansible để thay đổi lâu dài; sửa trực tiếp file trên VM có thể bị Ansible ghi đè.
+
+### 5.15. CI/CD GitHub Actions
 
 **Đã làm được gì**
 
@@ -961,7 +1032,7 @@ git -C ~/Phone-shop rev-parse --short HEAD
 
 Runner cần trả `active`. Commit trên VM phải trùng commit được ghi trong lần chạy GitHub Actions.
 
-### 5.15. Snapshot VMware
+### 5.16. Snapshot VMware
 
 **Đã làm được gì**
 
@@ -1000,6 +1071,8 @@ Pull request chỉ build để kiểm tra. Pull request không chạy job Deploy
 - `ansible/playbooks/phone-shop-prereqs.yml`: cài Java, Maven, Node.js, npm, MySQL, Git, curl, Playwright và Chromium.
 - `ansible/playbooks/phone-shop-deploy.yml`: tạo database/tài khoản MySQL, sinh bí mật, lấy mã nguồn, build ứng dụng, tạo service và cấu hình Nginx.
 - `ansible/playbooks/phone-shop-monitor.yml`: cài script Playwright, Telegram và timer 07:00.
+- `ansible/files/monitor-phone-shop.sh`: kiểm tra tài nguyên, dịch vụ, HTTP, backup, Playwright và quản lý chống spam cảnh báo.
+- `ansible/templates/phone-shop-health-monitor.*.j2`: ngưỡng, service và timer kiểm tra mỗi 5 phút.
 - `ansible/playbooks/phone-shop-operations.yml`: cấu hình múi giờ, UFW, giới hạn log và timer backup 02:00.
 - `ansible/playbooks/phone-shop-cicd.yml`: tải, đăng ký và chạy GitHub Actions runner bằng systemd; cài script deploy và quy tắc sudo.
 - `ansible/files/deploy-phone-shop.sh`: khóa để không cho hai lần deploy chạy đồng thời, cập nhật repo hạ tầng, chạy Ansible và kiểm tra HTTP.
@@ -1220,7 +1293,7 @@ sudo tail -n 100 /var/log/nginx/error.log
 ## 10. Kiểm tra lịch tự động
 
 ```bash
-systemctl list-timers phone-shop-backup.timer phone-shop-e2e.timer --all
+systemctl list-timers phone-shop-backup.timer phone-shop-e2e.timer phone-shop-health-monitor.timer --all
 ```
 
 Kết quả cần hiển thị:
@@ -1450,6 +1523,8 @@ Như vậy, hệ thống hiện là một lab tự động hóa khá đầy đ�
 - [ ] Timer Playwright có lần chạy tiếp theo.
 - [ ] File backup MySQL gần nhất tồn tại.
 - [ ] Telegram nhận được kết quả lần chạy Playwright gần nhất.
+- [ ] Timer giám sát sức khỏe đang `enabled` và có lần chạy tiếp theo.
+- [ ] Log health monitor có kết quả CPU, RAM, swap, disk, service và HTTP.
 - [ ] UFW đang bật và chỉ mở các cổng dự kiến.
 - [ ] Cổng 3000, 8081 và 3306 chỉ lắng nghe trên loopback.
 - [ ] Dung lượng đĩa còn đủ: `df -h`.

@@ -1,0 +1,14 @@
+[Unit]
+Description=Monitor Phone Shop resources and services
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+EnvironmentFile=/etc/phone-shop/health-monitor.env
+Environment=PHONE_SHOP_TELEGRAM_ENV_FILE={{ phone_shop_env_file }}
+Environment=PHONE_SHOP_MONITOR_STATE_DIR=/var/lib/phone-shop-monitor
+ExecStart=/usr/local/sbin/monitor-phone-shop
+UMask=0077

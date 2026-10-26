@@ -1,0 +1,12 @@
+[Unit]
+Description=Check Phone Shop health every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec={{ phone_shop_monitor_interval }}
+AccuracySec=30s
+RandomizedDelaySec=20s
+Unit=phone-shop-health-monitor.service
+
+[Install]
+WantedBy=timers.target

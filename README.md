@@ -11,7 +11,7 @@ Dự án thực hành System Engineer: quản lý mã cấu hình bằng Git và
 - `ansible/files/check-nginx.sh`: kiểm tra HTTP 200 tại `127.0.0.1` mỗi 5 phút qua cron. Kết quả vào system journal với nhãn `infra-health`.
 - `scripts/Start-Infrastructure.ps1`: trên Windows, bật VM nếu cần, tìm IP bằng `vmrun`, kết nối SSH, cập nhật repo và chạy playbook.
 - `ansible/playbooks/phone-shop-prereqs.yml`: chuẩn bị Java 17, Maven, Node.js, npm, MySQL và Playwright/Chromium cho dự án Phone-shop.
-- `ansible/playbooks/phone-shop-monitor.yml`: cài script chạy Playwright, gửi kết quả qua Telegram và tạo lịch systemd hằng ngày.
+- `ansible/playbooks/phone-shop-monitor.yml`: cài lịch Playwright, Telegram và bộ giám sát CPU, RAM, swap, ổ đĩa, dịch vụ, HTTP, backup.
 - `ansible/playbooks/phone-shop-deploy.yml`: tạo database/tài khoản MySQL, build Spring Boot và Next.js, chạy hai dịch vụ bằng systemd, rồi cấu hình Nginx reverse proxy.
 - `ansible/playbooks/phone-shop-operations.yml`: đặt múi giờ, bật UFW, giới hạn journal và sao lưu MySQL hằng ngày.
 - `ansible/playbooks/phone-shop-cicd.yml`: cài lệnh triển khai giới hạn cho GitHub Actions runner.
@@ -61,7 +61,7 @@ npm test
 
 `npm test` chạy script `playwright test` trong `package.json` và mở trang Nginx hiện tại tại `http://127.0.0.1`. Khi ứng dụng Phone-shop được triển khai, đổi URL và thêm các bài test nghiệp vụ.
 
-## Thông báo Telegram và lịch kiểm thử
+## Thông báo Telegram, lịch kiểm thử và giám sát hệ thống
 
 Tạo file riêng tư `/home/vanthoa/.config/infra/telegram.env` trên VM:
 
@@ -78,15 +78,24 @@ ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-mon
 sudo /usr/local/bin/run-phone-shop-e2e --notification-test
 ```
 
-Playbook mặc định bật lịch kiểm thử lúc 07:00 hằng ngày:
+Playbook mặc định bật lịch kiểm thử lúc 07:00 hằng ngày và kiểm tra sức khỏe hệ thống mỗi 5 phút:
 
 ```bash
 ansible-playbook -i ansible/inventory/hosts.ini ansible/playbooks/phone-shop-monitor.yml -K
-systemctl list-timers phone-shop-e2e.timer
+systemctl list-timers phone-shop-e2e.timer phone-shop-health-monitor.timer --all
 journalctl -u phone-shop-e2e.service -n 100 --no-pager
+sudo journalctl -u phone-shop-health-monitor.service -n 100 --no-pager
 ```
 
-`list-timers` cho biết lần chạy kế tiếp; `journalctl` xem kết quả và lỗi của lần chạy gần đây. Có thể tắt lịch khi chạy playbook bằng `-e phone_shop_monitor_enabled=false`.
+`list-timers` cho biết lần chạy kế tiếp; `journalctl` xem kết quả và lỗi của lần chạy gần đây. Bộ giám sát cảnh báo khi CPU từ 90%, RAM/swap/ổ đĩa từ 85%, dịch vụ dừng, web/API khác HTTP 200, backup quá 36 giờ hoặc Playwright thất bại. Một lỗi phải xuất hiện hai lần liên tiếp mới gửi Telegram; khi phục hồi sẽ có tin báo riêng.
+
+Gửi thử Telegram của bộ giám sát:
+
+```bash
+sudo /usr/local/sbin/monitor-phone-shop --notification-test
+```
+
+Có thể tắt riêng lịch Playwright bằng `-e phone_shop_monitor_enabled=false` hoặc lịch sức khỏe bằng `-e phone_shop_health_monitor_enabled=false` khi chạy playbook.
 
 ## Bảo mật, log và backup
 
